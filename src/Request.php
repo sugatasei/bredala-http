@@ -9,11 +9,11 @@ namespace Bredala\Http;
  */
 class Request
 {
-    private array $uri = [];
-    private ?array $queryParams = null;
-    private ?array $formParams = null;
-    private ?array $jsonParams = null;
-    private ?array $uploadedFiles = null;
+    protected array $uri = [];
+    protected ?array $queryParams = null;
+    protected ?array $formParams = null;
+    protected ?array $jsonParams = null;
+    protected ?array $uploadedFiles = null;
 
     // -------------------------------------------------------------------------
     // Initialize
@@ -184,6 +184,22 @@ class Request
     public function uri(): string
     {
         return $this->uri['path'] ?? '/';
+    }
+
+    // -------------------------------------------------------------------------
+    // Headers
+    // -------------------------------------------------------------------------
+
+    /**
+     * Fetch an item from the COOKIE array
+     *
+     * @param string $name
+     * @param mixed $default
+     * @return mixed
+     */
+    public function cookie(string $name, $default = null)
+    {
+        return $_COOKIE[$name] ?? $default;
     }
 
     // -------------------------------------------------------------------------
@@ -410,8 +426,6 @@ class Request
      * Return an UploadedFile instance array.
      *
      * @param array $files A array which respect $_FILES structure
-     *
-     * @throws InvalidArgumentException for unrecognized values
      */
     protected function parseUploadedFiles(): array
     {
