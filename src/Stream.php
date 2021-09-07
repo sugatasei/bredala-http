@@ -42,18 +42,12 @@ class Stream
         ],
     ];
 
-    private function __construct()
-    {
-    }
-
     /**
-     * Creates a new stream.
-     *
      * @param string|resource $body
      *
      * @throws InvalidArgumentException
      */
-    public static function create($body = ''): self
+    public function __construct($body = '')
     {
         if (is_string($body)) {
             $resource = fopen('php://temp', 'rw+');
@@ -61,18 +55,25 @@ class Stream
             $body = $resource;
         }
 
-        if (is_resource($body)) {
-            $new = new self();
-            $new->stream = $body;
-            $meta = stream_get_meta_data($new->stream);
-            $new->seekable = $meta['seekable'] && 0 === fseek($new->stream, 0, SEEK_CUR);
-            $new->readable = isset(self::READ_WRITE_HASH['read'][$meta['mode']]);
-            $new->writable = isset(self::READ_WRITE_HASH['write'][$meta['mode']]);
-
-            return $new;
+        if (!is_resource($body)) {
+            throw new InvalidArgumentException('First argument to Stream::create() must be a string or a resource');
         }
 
-        throw new InvalidArgumentException('First argument to Stream::create() must be a string or a resource');
+        $this->stream = $body;
+        $meta = stream_get_meta_data($this->stream);
+        $this->seekable = $meta['seekable'] && 0 === fseek($this->stream, 0, SEEK_CUR);
+        $this->readable = isset(self::READ_WRITE_HASH['read'][$meta['mode']]);
+        $this->writable = isset(self::READ_WRITE_HASH['write'][$meta['mode']]);
+    }
+
+    /**
+     * Creates a new stream.
+     *
+     * @param string|resource $body
+     */
+    public static function create($body = ''): self
+    {
+        return new static($body);
     }
 
     /**
