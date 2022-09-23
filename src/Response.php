@@ -121,7 +121,7 @@ class Response
     // -------------------------------------------------------------------------
 
     /**
-     * Gets HTTP protocole version
+     * Returns HTTP protocole version
      *
      * @return string
      */
@@ -136,7 +136,7 @@ class Response
      * @param string $version
      * @return $this
      */
-    public function setProtocolVersion(string $version): object
+    public function setProtocolVersion(string $version): static
     {
         if (mb_strpos($version, "HTTP/") === 0) {
             $version = mb_substr($version, 5);
@@ -148,7 +148,7 @@ class Response
     }
 
     /**
-     * Gets HTTP status
+     * Returns HTTP status
      *
      * @return integer
      */
@@ -164,7 +164,7 @@ class Response
      * @param string|null $reason
      * @return $this
      */
-    public function setStatusCode(int $code, ?string $reason = null): self
+    public function setStatusCode(int $code, ?string $reason = null): static
     {
         $this->statusCode = $code;
         $this->statusReason = $reason ?? self::$statusReasons[$code] ?? "Unknown Status";
@@ -177,7 +177,7 @@ class Response
     // -------------------------------------------------------------------------
 
     /**
-     * Gets HTTP headers
+     * Returns HTTP headers
      *
      * @return array
      */
@@ -187,13 +187,13 @@ class Response
     }
 
     /**
-     * Set HTTP header
+     * Sets HTTP header
      *
      * @param string $value
      * @param bool $replace
      * @return $this
      */
-    public function setHeader(string $name, string $value): self
+    public function setHeader(string $name, string $value): static
     {
         $name = self::normalizeHeaderName($name);
         $this->headers[$name] = [$value];
@@ -201,7 +201,14 @@ class Response
         return $this;
     }
 
-    public function addHeader(string $name, string $value): self
+    /**
+     * Adds HTTP header
+     *
+     * @param string $name
+     * @param string $value
+     * @return static
+     */
+    public function addHeader(string $name, string $value): static
     {
         $name = self::normalizeHeaderName($name);
 
@@ -214,7 +221,13 @@ class Response
         return $this;
     }
 
-    public function removeHeader(string $name): self
+    /**
+     * Removes a header
+     *
+     * @param string $name
+     * @return static
+     */
+    public function removeHeader(string $name): static
     {
         $name = self::normalizeHeaderName($name);
 
@@ -231,7 +244,7 @@ class Response
      * @param string $mime
      * @return $this
      */
-    public function setContentType(string $mime, string $charset = "UTF-8"): self
+    public function setContentType(string $mime, string $charset = "UTF-8"): static
     {
         $mime = self::$mimesTypes[$mime][0] ?? $mime;
 
@@ -252,7 +265,7 @@ class Response
      * @param integer $expire
      * @return $this
      */
-    public function addCookie(string $name, $value, int $expire = 0, $settings = []): self
+    public function addCookie(string $name, $value, int $expire = 0, $settings = []): static
     {
         $settings = $settings + $this->settings;
 
@@ -292,7 +305,7 @@ class Response
      * @param string $name
      * @return $this
      */
-    public function removeCookie(string $name): self
+    public function removeCookie(string $name): static
     {
         return $this->addCookie($name, "", strtotime("-1 day"));
     }
@@ -304,7 +317,7 @@ class Response
      * @param boolean $temporary
      * @return $this
      */
-    public function redirect(string $url = "/", bool $temporary = true): self
+    public function redirect(string $url = "/", bool $temporary = true): static
     {
         $this->reset();
         $this->setStatusCode($temporary ? 302 : 301);
@@ -319,7 +332,7 @@ class Response
      * @param integer $age
      * @return $this
      */
-    public function cache(int $age = 86400, $lastModify = null): object
+    public function cache(int $age = 86400): static
     {
         $this->setHeader("pragma", "public");
         $this->setHeader("cache-control", "max-age=" . $age);
@@ -333,7 +346,7 @@ class Response
      *
      * @return $this
      */
-    public function noCache(): object
+    public function noCache(): static
     {
         $this->setHeader("expires", "Mon, 26 Jul 1990 05:00:00 GMT");
         $this->setHeader("last-modified", "" . gmdate("D, d M Y H:i:s") . " GMT");
@@ -351,7 +364,7 @@ class Response
      * @param string|null $method
      * @return $this
      */
-    public function cors(?string $origin = null, ?string $method = null): object
+    public function cors(?string $origin = null, ?string $method = null): static
     {
         $origin = $origin ?? $_SERVER["HTTP_ORIGIN"] ?? "*";
         $method = $method ?? $_SERVER["HTTP_ACCESS_CONTROL_REQUEST_METHOD"] ?? "GET, POST, PUT, PATCH, DELETE, OPTIONS";
@@ -371,7 +384,7 @@ class Response
     // -------------------------------------------------------------------------
 
     /**
-     * Gets body
+     * Returns body
      *
      * @return Stream
      */
@@ -390,7 +403,7 @@ class Response
      * @param mixed $body
      * @return object
      */
-    public function setBody($body = ""): self
+    public function setBody($body = ""): static
     {
         if ($body instanceof Stream) {
             $this->body = $body;

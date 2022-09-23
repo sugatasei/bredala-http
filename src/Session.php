@@ -25,13 +25,13 @@ class Session
     // -------------------------------------------------------------------------
 
     /**
-     * Handle temporary variables
+     * Handles temporary variables
      *
      * Mark flash data for deletion, and clear old data
      *
-     * @return $this
+     * @return static
      */
-    public function start()
+    public function start(): static
     {
         if ($this->started) {
             return $this;
@@ -68,33 +68,6 @@ class Session
     // -------------------------------------------------------------------------
 
     /**
-     * Has data
-     *
-     * @param string $name
-     * @return bool
-     */
-    public function has($name)
-    {
-        return isset($_SESSION[$name]);
-    }
-
-    // -------------------------------------------------------------------------
-
-    /**
-     * Get data
-     *
-     * @param string $name
-     * @param mixed $default
-     * @return mixed
-     */
-    public function get($name, $default = null)
-    {
-        return isset($_SESSION[$name]) ? $_SESSION[$name] : $default;
-    }
-
-    // -------------------------------------------------------------------------
-
-    /**
      * Get all
      *
      * @return array
@@ -104,16 +77,37 @@ class Session
         return $_SESSION;
     }
 
-    // -------------------------------------------------------------------------
+    /**
+     * Has data
+     *
+     * @param string $name
+     * @return bool
+     */
+    public function has(string $name): bool
+    {
+        return isset($_SESSION[$name]);
+    }
+
+    /**
+     * Get data
+     *
+     * @param string $name
+     * @param mixed $default
+     * @return mixed
+     */
+    public function get(string $name, mixed $default = null): mixed
+    {
+        return isset($_SESSION[$name]) ? $_SESSION[$name] : $default;
+    }
 
     /**
      * Set
      *
      * @param string $name
      * @param mixed $value
-     * @return $this
+     * @return static
      */
-    public function set($name, $value)
+    public function set(string $name, mixed $value): static
     {
         $_SESSION[$name] = $value;
         return $this;
@@ -125,9 +119,9 @@ class Session
      *
      * @param string $name
      * @param mixed $value
-     * @return $this
+     * @return static
      */
-    public function setFlash($name, $value)
+    public function setFlash(string $name, mixed $value): static
     {
         return $this->set($name, $value)->markFlash($name);
     }
@@ -137,9 +131,9 @@ class Session
      * @param string $name
      * @param mixed $value
      * @param int $time
-     * @return $this
+     * @return static
      */
-    public function setTemp($name, $value, $time = 300)
+    public function setTemp(string $name, mixed $value, int $time = 300)
     {
         return $this->set($name, $value)->markTemp($name, $time);
     }
@@ -150,30 +144,62 @@ class Session
      * Mark as flash
      *
      * @param string $name
-     * @return $this
+     * @return static
      */
-    public function markFlash($name)
+    public function markFlash(string $name): static
     {
-        if (is_array($name)) {
-            foreach ($name as $n) {
-                $this->addCache($n, 'new');
-            }
-        } else {
-            $this->addCache($name, 'new');
+        $this->addCache($name, 'new');
+        return $this;
+    }
+
+    /**
+     * Unmark flash
+     *
+     * @param string $name
+     * @return static
+     */
+    public function unmarkFlash(string $name)
+    {
+        $this->delCache($name);
+        return $this;
+    }
+
+    /**
+     * Mark as temp
+     *
+     * @param string $name
+     * @param int $time
+     * @return static
+     */
+    public function markTemp(string $name, int $time = 300)
+    {
+        if ($time < 2592000) {
+            $time += time();
         }
+        $this->addCache($name, $time);
 
         return $this;
     }
 
-    // -------------------------------------------------------------------------
+    /**
+     * Unmark temp
+     *
+     * @param string $name
+     * @return static
+     */
+    public function unmarkTemp(string $name)
+    {
+        $this->delCache($name);
+        return $this;
+    }
 
     /**
      * Add to cache
      *
      * @param string $name
-     * @param mixed $value
+     * @param int|string $value
      */
-    private function addCache($name, $value)
+    private function addCache(string $name, mixed $value)
     {
         if (isset($_SESSION[$name])) {
             if (!isset($_SESSION[$this->cache])) {
@@ -183,72 +209,12 @@ class Session
         }
     }
 
-    // -------------------------------------------------------------------------
-
-    /**
-     * Unmark flash
-     *
-     * @param name $name
-     * @return $this
-     */
-    public function unmarkFlash($name)
-    {
-        $this->delCache($name);
-        return $this;
-    }
-
-    // -------------------------------------------------------------------------
-
-    /**
-     * Mark as temp
-     *
-     * @param string $name
-     * @param int $time
-     * @return $this
-     */
-    public function markTemp($name, $time = 300)
-    {
-        $now = time();
-        if (is_array($name)) {
-            foreach ($name as $n => $t) {
-                $this->addCache($n, $now + (int) $t);
-            }
-        } else {
-            $this->addCache($name, $now + (int) $time);
-        }
-
-        return $this;
-    }
-
-    // -------------------------------------------------------------------------
-
-    /**
-     * Unmark temp
-     *
-     * @param string $name
-     * @return $this
-     */
-    public function unmarkTemp($name)
-    {
-        if (is_array($name)) {
-            foreach ($name as $n) {
-                $this->delCache($n);
-            }
-        } else {
-            $this->delCache($name);
-        }
-
-        return $this;
-    }
-
-    // -------------------------------------------------------------------------
-
     /**
      * Delete to cache
      *
      * @param string $name
      */
-    private function delCache($name)
+    private function delCache(string $name)
     {
         if (isset($_SESSION[$this->cache][$name])) {
             unset($_SESSION[$this->cache][$name]);
@@ -260,11 +226,10 @@ class Session
     /**
      * Set
      *
-     * @param type $name
-     * @param type $value
-     * @return $this
+     * @param string $name
+     * @return static
      */
-    public function delete($name)
+    public function delete(string $name): static
     {
         if (isset($_SESSION[$name])) {
             unset($_SESSION[$name]);
@@ -272,14 +237,12 @@ class Session
         return $this;
     }
 
-    // -------------------------------------------------------------------------
-
     /**
-     * Remove all sessions vars
+     * Removes all sessions vars
      *
-     * @return $this
+     * @return static
      */
-    public function reset()
+    public function reset(): static
     {
         if ($this->started) {
             session_unset();
@@ -288,14 +251,12 @@ class Session
         return $this;
     }
 
-    // -------------------------------------------------------------------------
-
     /**
-     * Destroy session
+     * Destroys session
      *
-     * @return $this
+     * @return static
      */
-    public function destroy()
+    public function destroy(): static
     {
         if ($this->started) {
             session_destroy();
@@ -303,14 +264,13 @@ class Session
         return $this;
     }
 
-    // -------------------------------------------------------------------------
 
     /**
-     * Write and close current session
+     * Writes and closes current session
      *
-     * @return $this
+     * @return static
      */
-    public function close()
+    public function close(): static
     {
         if ($this->started) {
             session_write_close();
