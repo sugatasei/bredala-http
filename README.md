@@ -8,7 +8,8 @@ PHP object-oriented layer for the HTTP specification.
 
 ### Server info
 
-- `server(): array` Returns an array of server params.
+- `servers(): array` Returns an array of server params.
+- `server(string $name)` Returns a server params.
 - `time(): int` Returns the request time in seconds
 - `mtime(): float` Returns the request time in seconds with more precision
 
@@ -26,14 +27,17 @@ PHP object-oriented layer for the HTTP specification.
 
 ### HTTP Headers
 
-- `cookie(string $name, mixed $default = null)` Fetch an item from the COOKIE array.
+- `cookies()` Returns an array of cookies.
+- `cookie(string $name)` Returns a cookie value.
 
 ### Request data
 
 - `queryParams(): array` Returns an array of query params.
-- `formParams(): array` Returns an array of form params.
-- `jsonParams(): array` Returns an array of json params.
-- `uploadedFiles(): array` Returns an array of uploaded files indexed by field name.
+- `queryParam(string $name)` Returns a query value.
+- `bodyParams(): array` Returns an array of form/json params.
+- `bodyParam(string $name)` Returns a form/json value.
+- `attachements(): array` Returns an array of uploaded files indexed by field name.
+- `attachement(string $name): array` Returns an uploaded files.
 
 ### Client
 

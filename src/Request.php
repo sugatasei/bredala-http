@@ -9,56 +9,154 @@ namespace Bredala\Http;
  */
 class Request
 {
-    protected array $uri = [];
-    protected ?array $queryParams = null;
-    protected ?array $formParams = null;
-    protected ?array $jsonParams = null;
-    protected ?array $uploadedFiles = null;
+    private string $uri = '/';
+    private array $servers = [];
+    private array $queryParams = [];
+    private array $bodyParams = [];
+    private array $attachements = [];
+    private array $cookies = [];
+    private ?string $ip = null;
 
     // -------------------------------------------------------------------------
-    // Initialize
+    // Constructors
     // -------------------------------------------------------------------------
 
-    /**
-     * @param array $config
-     */
-    public function __construct()
+    public static function create(): static
     {
-        if (!isset($_SERVER['REQUEST_TIME'])) {
-            $_SERVER['REQUEST_TIME'] = time();
-        }
+        return new static();
+    }
 
-        if (!isset($_SERVER['REQUEST_TIME_FLOAT'])) {
-            $_SERVER['REQUEST_TIME_FLOAT'] = microtime(true);
-        }
+    public static function createFromServer(): static
+    {
+        $uri = self::parseUri();
 
-        $this->uri = $this->parseUri();
+        return static::create()
+            ->setUri($uri['path'] ?? '/')
+            ->setServers($_SERVER)
+            ->setQueryParams(self::parseQueryParams($uri['query'] ?? null))
+            ->setBodyParams(self::parseBodyParams())
+            ->setAttachements(self::parseAttachements())
+            ->setCookies($_COOKIE);
     }
 
     // -------------------------------------------------------------------------
-    // Server info
+    // Setters
     // -------------------------------------------------------------------------
 
     /**
-     * Returns an array of server params
+     * Sets current uri
+     *
+     * @param string $uri
+     * @return static
+     */
+    public function setUri(string $uri): static
+    {
+        $this->uri = $uri;
+        return $this;
+    }
+
+    /**
+     * Sets server params
+     *
+     * @param array $values
+     * @return static
+     */
+    public function setServers(array $values): static
+    {
+        $this->servers = $values;
+        return $this;
+    }
+
+    /**
+     * Sets query params
+     *
+     * @param array $values
+     * @return static
+     */
+    public function setQueryParams(array $values): static
+    {
+        $this->queryParams = $values;
+        return $this;
+    }
+
+    /**
+     * Sets body params
+     *
+     * @param array $values
+     * @return static
+     */
+    public function setBodyParams(array $values): static
+    {
+        $this->bodyParams = $values;
+        return $this;
+    }
+
+    /**
+     * Set Attachements
+     *
+     * @param array $values
+     * @return static
+     */
+    public function setAttachements(array $values): static
+    {
+        $this->attachements = $values;
+
+        if (!isset($this->attachements['REQUEST_TIME'])) {
+            $this->attachements['REQUEST_TIME'] = time();
+        }
+
+        if (!isset($this->attachements['REQUEST_TIME_FLOAT'])) {
+            $this->attachements['REQUEST_TIME_FLOAT'] = microtime(true);
+        }
+
+        return $this;
+    }
+
+    /**
+     * Sets cookies
+     *
+     * @param array $values
+     * @return static
+     */
+    public function setCookies(array $values): static
+    {
+        $this->cookies = $values;
+        return $this;
+    }
+
+    // -------------------------------------------------------------------------
+    // Getters
+    // -------------------------------------------------------------------------
+
+    /**
+     * Returns current uri
+     *
+     * @return string
+     */
+    public function uri(): string
+    {
+        return $this->uri;
+    }
+
+    /**
+     * Returns server params
      *
      * @return array
      */
-    public function serverParams(): array
+    public function servers(): array
     {
-        return $_SERVER;
+        return $this->servers;
     }
 
     /**
-     * Returns a server param or a default value
+     * Returns a server param
      *
-     * @param string $key
-     * @param mixed $default
+     * @param string $name
      * @return mixed
      */
-    public function server(string $key, $default = null)
+    public function server(string $name): mixed
     {
-        return $_SERVER[$key] ?? $default;
+        return $this->server[$name] ?? null;
     }
 
     /**
@@ -68,7 +166,7 @@ class Request
      */
     public function time(): int
     {
-        return $this->server('REQUEST_TIME');
+        return $this->server('REQUEST_TIME') ?? 0;
     }
 
     /**
@@ -78,12 +176,8 @@ class Request
      */
     public function mtime(): float
     {
-        return $this->server('REQUEST_TIME_FLOAT');
+        return $this->server('REQUEST_TIME_FLOAT') ?? 0;
     }
-
-    // -------------------------------------------------------------------------
-    // Request method
-    // -------------------------------------------------------------------------
 
     /**
      * Returns HTTP request's method
@@ -92,7 +186,7 @@ class Request
      */
     public function method(): string
     {
-        return $this->server('REQUEST_METHOD', 'CLI');
+        return $this->server('REQUEST_METHOD') ?? 'CLI';
     }
 
     /**
@@ -177,155 +271,13 @@ class Request
     }
 
     /**
-     * Returns the request URI
-     *
-     * @return string
-     */
-    public function uri(): string
-    {
-        return $this->uri['path'] ?? '/';
-    }
-
-    // -------------------------------------------------------------------------
-    // Headers
-    // -------------------------------------------------------------------------
-
-    /**
-     * Fetch an item from the COOKIE array
-     *
-     * @param string $name
-     * @param mixed $default
-     * @return mixed
-     */
-    public function cookie(string $name, $default = null)
-    {
-        return $_COOKIE[$name] ?? $default;
-    }
-
-    // -------------------------------------------------------------------------
-    // Request Data
-    // -------------------------------------------------------------------------
-
-    /**
-     * Returns an array of query params
-     *
-     * @return array
-     */
-    public function queryParams(): array
-    {
-        if ($this->queryParams === null) {
-            $this->queryParams = $this->parseQueryParams();
-        }
-
-        return $this->queryParams;
-    }
-
-    /**
-     * Returns a query param or a default value
-     *
-     * @param string $key
-     * @param mixed $default
-     * @return mixed
-     */
-    public function queryParam(string $key, $default = null)
-    {
-        $params = $this->queryParams();
-        return $params[$key] ?? $default;
-    }
-
-    /**
-     * Returns an array of form params
-     *
-     * @return array
-     */
-    public function formParams(): array
-    {
-        if ($this->formParams === null) {
-            $this->formParams = $this->parseFormParams();
-        }
-
-        return $this->formParams;
-    }
-
-    /**
-     * Returns a form param or a default value
-     *
-     * @param string $key
-     * @param mixed $default
-     * @return mixed
-     */
-    public function formParam(string $key, $default = null)
-    {
-        $params = $this->formParams();
-        return $params[$key] ?? $default;
-    }
-
-    /**
-     * Returns an array of json params
-     *
-     * @return array
-     */
-    public function jsonParams(): array
-    {
-        if ($this->jsonParams === null) {
-            $this->jsonParams = $this->parseJsonParams();
-        }
-
-        return $this->jsonParams;
-    }
-
-    /**
-     * Returns a json param or a default value
-     *
-     * @param string $key
-     * @param mixed $default
-     * @return mixed
-     */
-    public function jsonParam(string $key, $default = null)
-    {
-        $params = $this->jsonParams();
-        return $params[$key] ?? $default;
-    }
-
-    /**
-     * Returns an array of uploaded files
-     *
-     * @return array
-     */
-    public function uploadedFiles(): array
-    {
-        if ($this->uploadedFiles === null) {
-            $this->uploadedFiles = $this->parseUploadedFiles();
-        }
-
-        return $this->uploadedFiles;
-    }
-
-    /**
-     * Returns an uploaded file
-     *
-     * @param string $key
-     * @param mixed $default
-     * @return mixed
-     */
-    public function uploadedFile(string $key)
-    {
-        $files = $this->uploadedFiles();
-        return $files[$key] ?? null;
-    }
-
-    // -------------------------------------------------------------------------
-    // Client
-    // -------------------------------------------------------------------------
-
-    /**
      * Returns the user agent
      *
      * @return string
      */
-    public function userAgent(): string
+    public function userAgent(): ?string
     {
-        return $this->server('HTTP_USER_AGENT', '');
+        return $this->server('HTTP_USER_AGENT');
     }
 
     /**
@@ -336,73 +288,185 @@ class Request
     public function ip(): string
     {
         if ($this->ip === null) {
-            $this->ip = $this->parseIp();
+            $ip = filter_var($this->server('REMOTE_ADDR', ''), FILTER_VALIDATE_IP);
+            $this->ip = $ip ?: '0.0.0.0';
         }
 
         return $this->ip;
     }
 
     // -------------------------------------------------------------------------
+
+    /**
+     * Gets query params
+     *
+     * @return array
+     */
+    public function queryParams(): array
+    {
+        return $this->queryParams;
+    }
+
+    /**
+     * Gets query param
+     *
+     * @param string $name
+     * @return mixed
+     */
+    public function queryParam(string $name): mixed
+    {
+        return $this->queryParam[$name] ?? null;
+    }
+
+    /**
+     * Gets body params
+     *
+     * @return array
+     */
+    public function bodyParams(): array
+    {
+        return $this->bodyParams;
+    }
+
+    /**
+     * Gets body param
+     *
+     * @param string $name
+     * @return mixed
+     */
+    public function bodyParam(string $name): mixed
+    {
+        return $this->bodyParams[$name];
+    }
+
+    /**
+     * Gets attachements
+     *
+     * @return array
+     */
+    public function attachements(): array
+    {
+        return $this->attachements;
+    }
+
+    /**
+     * Gets attachement
+     *
+     * @param string $name
+     * @return array
+     */
+    public function attachement(string $name): ?array
+    {
+        return $this->attachements[$name] ?? null;
+    }
+
+    // -------------------------------------------------------------------------
+
+    /**
+     * Gets cookies
+     *
+     * @return array
+     */
+    public function cookies(): array
+    {
+        return $this->cookies;
+    }
+
+    /**
+     * Get cookie
+     *
+     * @param string $name
+     * @return mixed
+     */
+    public function cookie(string $name): mixed
+    {
+        return $this->cookies[$name] ?? null;
+    }
+
+    // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
 
-    protected function parseUri(): array
+    /**
+     * Parse Uri
+     *
+     * @return array
+     */
+    private static function parseUri(): array
     {
-        $uri = $_SERVER['REQUEST_URI'] ?? $this->parseArgv();
+        $uri = $_SERVER['REQUEST_URI'] ?? self::parseArgv();
         $uri = preg_replace('#//+#', '/', $uri);
         $uri = '/' . trim($uri, '/');
 
         return parse_url('http://dummy' . $uri);
     }
 
-    protected function parseArgv(): string
+    /**
+     * Parse CLI arguments
+     *
+     * @return string
+     */
+    private static function parseArgv(): string
     {
-        if ($this->server('argc', 0) < 2) {
+        if (($_SERVER['argc'] ?? 0) < 2) {
             return '/';
         }
 
-        $argv = $this->server('argv');
+        $argv = $_SERVER['argv'] ?? [];
         array_shift($argv);
 
         return implode('/', $argv);
     }
 
-    protected function parseQueryParams()
+    /**
+     * Parse query params
+     *
+     * @param string|null $queryString
+     * @return array
+     */
+    private static function parseQueryParams(?string $queryString): array
     {
         if ($_GET) {
             return $_GET;
         }
 
-        if (($query = $this->uri['query'] ?? null)) {
-            return self::parseQueryString($query);
+        if ($queryString) {
+            return self::parseQueryString($queryString);
         }
 
         return [];
     }
 
-    protected function parseFormParams(): array
+    /**
+     * Parses a query string
+     *
+     * @param string $query
+     * @return array
+     */
+    private static function parseQueryString(string $query): array
     {
-        if ($_POST) {
-            return $_POST;
-        }
-
-        // PUT, PATCH ...
-        if ($this->isPut() || $this->isPatch()) {
-            if (($input = file_get_contents('php://input'))) {
-                return self::parseQueryString($input);
-            }
-        }
-
-        return [];
+        $data = [];
+        return mb_parse_str($query, $data) ? $data : [];
     }
 
-    protected function parseJsonParams(): array
+    /**
+     * Parses body
+     *
+     * @return array
+     */
+    private static function parseBodyParams(): array
     {
-        if ($this->isPost() || $this->isPut() || $this->isPatch()) {
-            if (($content = file_get_contents('php://input'))) {
-                $data = json_decode($content, true);
-                if (JSON_ERROR_NONE === json_last_error() && is_array($data)) {
+        $method = $_SERVER['REQUEST_METHOD'] ?? '';
+
+        if ($method === 'PUT' || $method === 'POST') {
+            if ($_POST) {
+                return $_POST;
+            } elseif (($input = file_get_contents('php://input'))) {
+                $data = json_decode($input, true);
+                if (is_array($data)) {
                     return $data;
+                } else {
+                    return self::parseQueryString($input);
                 }
             }
         }
@@ -410,24 +474,12 @@ class Request
         return [];
     }
 
-    private static function parseQueryString(string $query): array
-    {
-        $data = [];
-        return mb_parse_str($query, $data) ? $data : [];
-    }
-
-    protected function parseIp(): string
-    {
-        $ip = filter_var($this->server('REMOTE_ADDR', ''), FILTER_VALIDATE_IP);
-        return $ip ?: '0.0.0.0';
-    }
-
     /**
-     * Return an UploadedFile instance array.
+     * Returns an array of uploaded files indexed by field name.
      *
-     * @param array $files A array which respect $_FILES structure
+     * @return array
      */
-    protected function parseUploadedFiles(): array
+    private static function parseAttachements(): array
     {
         $files = [];
 
