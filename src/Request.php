@@ -156,7 +156,7 @@ class Request
      */
     public function server(string $name): mixed
     {
-        return $this->server[$name] ?? null;
+        return $this->servers[$name] ?? null;
     }
 
     /**
