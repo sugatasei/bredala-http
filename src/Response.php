@@ -71,6 +71,7 @@ class Response
     use HttpStatusTrait;
     use MimesTypesTrait;
 
+    protected Request $request;
     protected array $settings = [];
 
     protected string $version;
@@ -81,14 +82,15 @@ class Response
 
     protected ?Stream $body;
 
-    public function __construct(array $settings = [])
+    public function __construct(Request $request, array $settings = [])
     {
+        $this->request = $request;
         $this->settings = $settings + [
             "buffer"   => 0,
             "prefix"   => "",
             "domain"   => "",
             "path"     => "/",
-            "secure"   => self::isSecure(),
+            "secure"   => $this->isSecure(),
             "httponly" => true,
             "samesite" => '',
         ];
@@ -101,19 +103,19 @@ class Response
         $this->headers = [];
         $this->body = null;
 
-        $this->setProtocolVersion(self::findProtocolVersion());
+        $this->setProtocolVersion($this->findProtocolVersion());
         $this->setStatusCode(200);
     }
 
-    private static function isSecure(): bool
+    private function isSecure(): bool
     {
-        $https = $_SERVER["HTTPS"] ?? "";
+        $https = $this->request->server("HTTPS") ?? "";
         return !empty($https) && $https !== "off";
     }
 
-    private static function findProtocolVersion()
+    private function findProtocolVersion()
     {
-        return $_SERVER["SERVER_PROTOCOL"] ?? "1.0";
+        return $this->request->server("SERVER_PROTOCOL") ?? "1.0";
     }
 
     // -------------------------------------------------------------------------
@@ -183,7 +185,7 @@ class Response
      */
     public function getHeaders(): array
     {
-        return $this->setHeaders;
+        return $this->headers;
     }
 
     /**
@@ -366,9 +368,9 @@ class Response
      */
     public function cors(?string $origin = null, ?string $method = null): static
     {
-        $origin = $origin ?? $_SERVER["HTTP_ORIGIN"] ?? "*";
-        $method = $method ?? $_SERVER["HTTP_ACCESS_CONTROL_REQUEST_METHOD"] ?? "GET, POST, PUT, PATCH, DELETE, OPTIONS";
-        $headers = $_SERVER["HTTP_ACCESS_CONTROL_REQUEST_HEADERS"] ?? "*";
+        $origin = $origin ?? $this->request->server("HTTP_ORIGIN") ?? "*";
+        $method = $method ?? $this->request->server("HTTP_ACCESS_CONTROL_REQUEST_METHOD") ?? "GET, POST, PUT, PATCH, DELETE, OPTIONS";
+        $headers = $this->request->server("HTTP_ACCESS_CONTROL_REQUEST_HEADERS") ?? "*";
 
         $this->setHeader("access-control-allow-origin", $origin);
         $this->setHeader("access-control-allow-credentials", "true");
