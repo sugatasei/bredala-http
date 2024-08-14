@@ -100,15 +100,6 @@ class Request
     public function setAttachements(array $values): static
     {
         $this->attachements = $values;
-
-        if (!isset($this->attachements['REQUEST_TIME'])) {
-            $this->attachements['REQUEST_TIME'] = time();
-        }
-
-        if (!isset($this->attachements['REQUEST_TIME_FLOAT'])) {
-            $this->attachements['REQUEST_TIME_FLOAT'] = microtime(true);
-        }
-
         return $this;
     }
 
@@ -315,7 +306,7 @@ class Request
      */
     public function queryParam(string $name): mixed
     {
-        return $this->queryParam[$name] ?? null;
+        return $this->queryParams[$name] ?? null;
     }
 
     /**
@@ -446,7 +437,8 @@ class Request
     private static function parseQueryString(string $query): array
     {
         $data = [];
-        return mb_parse_str($query, $data) ? $data : [];
+        mb_parse_str($query, $data);
+        return $data;
     }
 
     /**
@@ -456,22 +448,35 @@ class Request
      */
     private static function parseBodyParams(): array
     {
-        $method = $_SERVER['REQUEST_METHOD'] ?? '';
-
-        if ($method === 'PUT' || $method === 'POST') {
-            if ($_POST) {
-                return $_POST;
-            } elseif (($input = file_get_contents('php://input'))) {
-                $data = json_decode($input, true);
-                if (is_array($data)) {
-                    return $data;
-                } else {
-                    return self::parseQueryString($input);
-                }
+        if ($_POST) {
+            return $_POST;
+        } elseif (($input = file_get_contents('php://input'))) {
+            if (($data = self::parseJson($input)) !== null) {
+                return $data;
             }
+
+            return self::parseQueryString($input);
         }
 
         return [];
+    }
+
+    /**
+     * Parse JSON document from request
+     *
+     * @param string $value
+     * @return array|null
+     */
+    private static function parseJson(string $value): ?array
+    {
+        $contentType = $_SERVER['CONTENT_TYPE'] ?? $_SERVER['HTTP_CONTENT_TYPE'] ?? '';
+
+        if ($contentType !== 'application/json') {
+            return null;
+        }
+
+        $data = json_decode($value, true);
+        return is_array($data) ? $data : null;
     }
 
     /**

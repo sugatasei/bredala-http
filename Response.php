@@ -71,51 +71,155 @@ class Response
     use HttpStatusTrait;
     use MimesTypesTrait;
 
-    protected Request $request;
     protected array $settings = [];
 
-    protected string $version;
-    protected int $statusCode;
-    protected string $statusReason;
+    private string $version = '';
+    private int $statusCode = 200;
+    private string $statusReason = 'OK';
+    private array $headers = [];
+    private ?Stream $body = null;
 
-    protected array $headers;
+    private int $buffer = 0;
 
-    protected ?Stream $body;
+    private array $cookieSettings = [
+        'prefix' => '',
+        'domain' => '',
+        'path' => '/',
+        'secure' => true,
+        'httponly' => true,
+        'samesite' => ''
+    ];
 
-    public function __construct(Request $request, array $settings = [])
+    private array $corsSettings = [
+        'origin' => '*',
+        'methods' => 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+        'headers' => '*'
+    ];
+
+
+    /**
+     * @param array $settings
+     * @return static
+     */
+    public static function create(): static
     {
-        $this->request = $request;
-        $this->settings = $settings + [
-            "buffer"   => 0,
-            "prefix"   => "",
-            "domain"   => "",
-            "path"     => "/",
-            "secure"   => $this->isSecure(),
-            "httponly" => true,
-            "samesite" => '',
-        ];
-
-        $this->reset();
+        return new static();
     }
 
-    public function reset()
+    public static function createFromServer(): static
+    {
+        $res = static::create()
+            ->setProtocolVersion(self::findProtocolVersion($_SERVER))
+            ->setCookieSecure(self::isSecure($_SERVER))
+            ->setCorsOrigin();
+
+        if (isset($_SERVER["SERVER_PROTOCOL"])) {
+            $res->setProtocolVersion($_SERVER["SERVER_PROTOCOL"]);
+        }
+
+        if (isset($_SERVER["HTTP_ORIGIN"])) {
+            $res->setCorsOrigin($_SERVER["HTTP_ORIGIN"]);
+        }
+
+        if (isset($_SERVER["HTTP_ACCESS_CONTROL_REQUEST_METHOD"])) {
+            $res->setCorsMethods($_SERVER["HTTP_ACCESS_CONTROL_REQUEST_METHOD"]);
+        }
+
+        if (isset($_SERVER["HTTP_ACCESS_CONTROL_REQUEST_HEADERS"])) {
+            $res->setCorsHeaders($_SERVER["HTTP_ACCESS_CONTROL_REQUEST_HEADERS"]);
+        }
+
+        return $res;
+    }
+
+    private static function isSecure(array $server): bool
+    {
+        $https = $server["HTTPS"] ?? "";
+        return !empty($https) && $https !== "off";
+    }
+
+    private static function findProtocolVersion(array $server): string
+    {
+        return $server["SERVER_PROTOCOL"] ?? "1.0";
+    }
+
+    // -------------------------------------------------------------------------
+    // Configuration
+    // -------------------------------------------------------------------------
+
+    public function setBuffer(int $buffer): static
+    {
+        $this->buffer = $buffer;
+        return $this;
+    }
+
+    public function setCookiePrefix(string $prefix = ''): static
+    {
+        $this->cookieSettings['prefix'] = $prefix;
+        return $this;
+    }
+
+    public function setCookieDomain(string $domain = ''): static
+    {
+        $this->cookieSettings['domain'] = $domain;
+        return $this;
+    }
+
+    public function setCookiePath(string $path = '/'): static
+    {
+        $this->cookieSettings['path'] = $path;
+        return $this;
+    }
+
+    public function setCookieSecure(bool $secure = true): static
+    {
+        $this->cookieSettings['secure'] = $secure;
+        return $this;
+    }
+
+    public function setCookieHttponly(bool $httponly = true): static
+    {
+        $this->cookieSettings['httponly'] = $httponly;
+        return $this;
+    }
+
+    public function setCookieSamesite(string $samesite = ''): static
+    {
+        $this->cookieSettings['samesite'] = $samesite;
+        return $this;
+    }
+
+    public function setCorsOrigin(string $origin = '*'): static
+    {
+        $this->corsSettings['origin'] = $origin;
+        return $this;
+    }
+
+    public function setCorsMethods(string $methods = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'): static
+    {
+        $this->corsSettings['methods'] = $methods;
+        return $this;
+    }
+
+    public function setCorsHeaders(string $headers = '*'): static
+    {
+        $this->corsSettings['headers'] = $headers;
+        return $this;
+    }
+
+    // -------------------------------------------------------------------------
+    // Reset headers & body
+    // -------------------------------------------------------------------------
+
+    /**
+     * @return static
+     */
+    public function reset(): static
     {
         $this->headers = [];
         $this->body = null;
 
-        $this->setProtocolVersion($this->findProtocolVersion());
-        $this->setStatusCode(200);
-    }
-
-    private function isSecure(): bool
-    {
-        $https = $this->request->server("HTTPS") ?? "";
-        return !empty($https) && $https !== "off";
-    }
-
-    private function findProtocolVersion()
-    {
-        return $this->request->server("SERVER_PROTOCOL") ?? "1.0";
+        return $this;
     }
 
     // -------------------------------------------------------------------------
@@ -189,21 +293,6 @@ class Response
     }
 
     /**
-     * Sets HTTP header
-     *
-     * @param string $value
-     * @param bool $replace
-     * @return $this
-     */
-    public function setHeader(string $name, string $value): static
-    {
-        $name = self::normalizeHeaderName($name);
-        $this->headers[$name] = [$value];
-
-        return $this;
-    }
-
-    /**
      * Adds HTTP header
      *
      * @param string $name
@@ -251,9 +340,9 @@ class Response
         $mime = self::$mimesTypes[$mime][0] ?? $mime;
 
         if ($charset) {
-            $this->setHeader("content-type", "{$mime}; charset={$charset}");
+            $this->addHeader("content-type", "{$mime}; charset={$charset}");
         } else {
-            $this->setHeader("content-type", "{$mime}");
+            $this->addHeader("content-type", "{$mime}");
         }
 
         return $this;
@@ -269,7 +358,7 @@ class Response
      */
     public function addCookie(string $name, $value, int $expire = 0, $settings = []): static
     {
-        $settings = $settings + $this->settings;
+        $settings = $settings + $this->cookieSettings;
 
         $header = $name . '=' . urlencode($value);
 
@@ -323,7 +412,7 @@ class Response
     {
         $this->reset();
         $this->setStatusCode($temporary ? 302 : 301);
-        $this->setHeader("location", filter_var($url, FILTER_SANITIZE_URL));
+        $this->addHeader("location", filter_var($url, FILTER_SANITIZE_URL));
 
         return $this;
     }
@@ -336,9 +425,9 @@ class Response
      */
     public function cache(int $age = 86400): static
     {
-        $this->setHeader("pragma", "public");
-        $this->setHeader("cache-control", "max-age=" . $age);
-        $this->setHeader("expires", self::gmdate(time() + $age));
+        $this->addHeader("pragma", "public");
+        $this->addHeader("cache-control", "max-age=" . $age);
+        $this->addHeader("expires", self::gmdate(time() + $age));
 
         return $this;
     }
@@ -350,11 +439,11 @@ class Response
      */
     public function noCache(): static
     {
-        $this->setHeader("expires", "Mon, 26 Jul 1990 05:00:00 GMT");
-        $this->setHeader("last-modified", "" . gmdate("D, d M Y H:i:s") . " GMT");
-        $this->setHeader("cache-control", "no-store, no-cache, must-revalidate");
-        $this->setHeader("cache-control", "post-check=0, pre-check=0", false);
-        $this->setHeader("pragma", "no-cache");
+        $this->addHeader("expires", "Mon, 26 Jul 1990 05:00:00 GMT");
+        $this->addHeader("last-modified", "" . gmdate("D, d M Y H:i:s") . " GMT");
+        $this->addHeader("cache-control", "no-store, no-cache, must-revalidate");
+        $this->addHeader("cache-control", "post-check=0, pre-check=0", false);
+        $this->addHeader("pragma", "no-cache");
 
         return $this;
     }
@@ -366,17 +455,17 @@ class Response
      * @param string|null $method
      * @return $this
      */
-    public function cors(?string $origin = null, ?string $method = null): static
+    public function cors(?string $origin = null, ?string $methods = null, ?string $headers = null): static
     {
-        $origin = $origin ?? $this->request->server("HTTP_ORIGIN") ?? "*";
-        $method = $method ?? $this->request->server("HTTP_ACCESS_CONTROL_REQUEST_METHOD") ?? "GET, POST, PUT, PATCH, DELETE, OPTIONS";
-        $headers = $this->request->server("HTTP_ACCESS_CONTROL_REQUEST_HEADERS") ?? "*";
+        $origin = $origin ?? $this->corsSettings['origin'];
+        $methods = $methods ?? $this->corsSettings['methods'];
+        $headers = $headers ?? $this->corsSettings['headers'];
 
-        $this->setHeader("access-control-allow-origin", $origin);
-        $this->setHeader("access-control-allow-credentials", "true");
-        $this->setHeader("access-control-max-age", "86400");
-        $this->setHeader("access-control-allow-methods", $method);
-        $this->setHeader("access-control-allow-headers", $headers);
+        $this->addHeader("access-control-allow-origin", $origin);
+        $this->addHeader("access-control-allow-credentials", "true");
+        $this->addHeader("access-control-max-age", "86400");
+        $this->addHeader("access-control-allow-methods", $methods);
+        $this->addHeader("access-control-allow-headers", $headers);
 
         return $this;
     }
@@ -416,6 +505,39 @@ class Response
         return $this;
     }
 
+    /**
+     * Convert string into plain text output
+     *
+     * @param string $data
+     * @return static
+     */
+    public function setText(string $data = ''): static
+    {
+        return $this->setContentType('txt')->setBody($data);
+    }
+
+    /**
+     * Convert data into json output
+     *
+     * @param mixed $data
+     * @return static
+     */
+    public function setJson(mixed $data = null): static
+    {
+        return $this->setContentType('json')->setBody(json_encode($data));
+    }
+
+    /**
+     * Convert ResponseException into json output
+     *
+     * @param ResponseException $ex
+     * @return static
+     */
+    public function setJsonException(ResponseException $ex): static
+    {
+        return $this->setStatusCode($ex->getCode())->setJson($ex);
+    }
+
     // -------------------------------------------------------------------------
     // Render
     // -------------------------------------------------------------------------
@@ -447,9 +569,9 @@ class Response
         header("HTTP/{$this->version} {$this->statusCode} {$this->statusReason}", true, $this->statusCode);
 
         // Headers
-        foreach ($this->headers as $name => $values) {
+        foreach ($this->headers as $name => $headers) {
             $firstReplace = ($name === 'Set-Cookie') ? false : true;
-            foreach ($values as $value) {
+            foreach ($headers as $value) {
                 header("{$name}: {$value}", $firstReplace);
                 $firstReplace = false;
             }
@@ -464,7 +586,7 @@ class Response
     public function emitBody(int $bufferLength = 0)
     {
         if ($bufferLength === null) {
-            $bufferLength = $this->settings['buffer'];
+            $bufferLength = $this->buffer;
         }
 
         if (!$bufferLength) {
