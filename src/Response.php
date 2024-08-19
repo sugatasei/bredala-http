@@ -287,8 +287,12 @@ class Response
      *
      * @return array
      */
-    public function getHeaders(): array
+    public function getHeaders(?string $name = null): array
     {
+        if ($name) {
+            $name = self::normalizeHeaderName($name);
+            return $this->headers[$name] ?? [];
+        }
         return $this->headers;
     }
 
@@ -387,7 +391,7 @@ class Response
             $header .= '; SameSite=' . $samesite;
         }
 
-        return $this->addHeader('Set-cookie', $header);
+        return $this->addHeader('Set-Cookie', $header);
     }
 
     /**
@@ -410,9 +414,15 @@ class Response
      */
     public function redirect(string $url = "/", bool $temporary = true): static
     {
+        $headers = $this->getHeaders();
+        $cookies = $headers['Set-Cookie'] ?? [];
+
         $this->reset();
         $this->setStatusCode($temporary ? 302 : 301);
         $this->addHeader("location", filter_var($url, FILTER_SANITIZE_URL));
+        foreach ($cookies as $cookie) {
+            $this->addHeader('Set-Cookie', $cookie);
+        }
 
         return $this;
     }
