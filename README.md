@@ -1,115 +1,275 @@
-# bredala-http
+# Bredala/Http
 
-PHP object-oriented layer for the HTTP specification.
+Couche d'abstraction pour PHP pour analyser des requètes HTTP et créer des réponses HTTP.
+
+Pas de routeur, pas de conteneur d'injection, pas de middleware : uniquement un lecteur de requète, un constructeur de réponse, une couche session et une exception porteuse de statut HTTP.
+
+## Installation
+
+```bash
+composer require sugatasei/bredala-http
+```
+
+Le corps des réponses est un `Psr\Http\Message\StreamInterface`, construit via une factory PSR-17. Le package en exige une (`psr/http-factory-implementation`) sans en imposer une en particulier :
+
+```bash
+composer require nyholm/psr7
+```
+
+`Response` détecte automatiquement la première implémentation installée parmi `nyholm/psr7`, `guzzlehttp/psr7`, `laminas/laminas-diactoros`, `httpsoft/http-message` et `slim/psr7`. Si aucune n'est disponible, la première écriture dans le corps lève une `LogicException`. Pour choisir explicitement :
+
+```php
+$res = Response::create()->setStreamFactory(new Nyholm\Psr7\Factory\Psr17Factory());
+```
+
+## Claude Code
+
+Ce package fournit un skill Claude Code dans [`skills/bredala-http/`](skills/bredala-http/) qui documente les patterns d'usage et les pièges de la librairie (redirect qui reset les headers, parsing JSON automatique, sessions, etc.).
+
+Dans un projet qui dépend de `sugatasei/bredala-http`, copie-le une fois dans `.claude/skills/` après `composer install` pour que Claude Code le charge automatiquement (le nom du dossier doit correspondre au `name` déclaré dans `SKILL.md`) :
+
+```bash
+cp -r vendor/sugatasei/bredala-http/skills/bredala-http .claude/skills/bredala-http
+```
 
 ## Request
 
-`Bredala\Http\Request` helps to get HTTP request informations.
+`Bredala\Http\Request` Récupération de données d'une requète HTTP.
 
-### Server info
+### Construction
 
-- `servers(): array` Returns an array of server params.
-- `server(string $name)` Returns a server params.
-- `time(): int` Returns the request time in seconds
-- `mtime(): float` Returns the request time in seconds with more precision
+- `create(): static` Crée une requète vide, à remplir manuellement (tests, CLI).
+- `createFromServer(): static` Crée une requète à partir des superglobales (`$_SERVER`, `$_GET`, `$_COOKIE`, `$_FILES` et le corps de la requète).
 
-### HTTP method
+Les setters permettent de construire une requète à la main :
 
-`method(): string` Request method (CLI, GET, POST, DELETE, ...).
-`isGet(): bool` Returns HTTP request's is using GET method.
-`isPost(): bool` Returns HTTP request's is using POST method.
-`isPatch(): bool` Returns HTTP request's is using PATCH method.
-`isDelete(): bool` Returns HTTP request's is using DELETE method.
-`isClient(): bool` Returns HTTP request's is using GET method.
-`isAjax(): bool` Returns if the current request is an ajax request.
-`isSecure(): bool` Returns if the request is using the HTTPS protocol.
-` uri(): string` Returns the request URI.
+- `setUri(string $uri): static`
+- `setServers(array $values): static`
+- `setQueryParams(array $values): static`
+- `setBodyParams(array $values): static`
+- `setAttachements(array $values): static`
+- `setCookies(array $values): static`
 
-### HTTP Headers
+### Données du serveur
 
-- `cookies()` Returns an array of cookies.
-- `cookie(string $name)` Returns a cookie value.
+- `servers(): array` Retourne un tableau des paramètres serveur (`$_SERVER`).
+- `server(string $name): mixed` Retourne un paramètre serveur.
+- `time(): int` Retourne l'horodatage en secondes de la requète.
+- `mtime(): float` Retourne l'horodatage en secondes de la requète avec une précision à la microseconde.
 
-### Request data
+### Méthode HTTP
 
-- `queryParams(): array` Returns an array of query params.
-- `queryParam(string $name)` Returns a query value.
-- `bodyParams(): array` Returns an array of form/json params.
-- `bodyParam(string $name)` Returns a form/json value.
-- `attachements(): array` Returns an array of uploaded files indexed by field name.
-- `attachement(string $name): array` Returns an uploaded files.
+- `method(): string` Retourne la méthode HTTP de la requète (CLI, GET, POST, DELETE, ...).
+- `isGet(): bool` Retourne vrai pour une requète HTTP GET.
+- `isPost(): bool` Retourne vrai pour une requète HTTP POST.
+- `isPut(): bool` Retourne vrai pour une requète HTTP PUT.
+- `isPatch(): bool` Retourne vrai pour une requète HTTP PATCH.
+- `isDelete(): bool` Retourne vrai pour une requète HTTP DELETE.
+- `isClient(): bool` Retourne vrai pour une requète depuis la ligne de commande.
+- `isAjax(): bool` Retourne vrai pour une requète AJAX.
+- `isSecure(): bool` Retourne vrai pour une requète HTTPS.
+
+### URL
+
+- `uri(): string` Retourne l'URI demandée par la requète.
+- `baseUrl(): string` Retourne l'URL de base du site (schéma et hôte).
+- `currentUrl(bool $withQueryString = true): string` Retourne l'URL complète de la requète.
+
+### Cookies
+
+- `cookies(): array` Retourne un tableau des cookies.
+- `cookie(string $name): mixed` Retourne la valeur d'un cookie.
+
+### Données de la requète
+
+- `queryParams(): array` Retourne un tableau des paramètres de la requète.
+- `queryParam(string $name): mixed` Retourne la valeur d'un paramètre de la requète.
+- `bodyParams(): array` Retourne un tableau des données du corps de la requète d'un formulaire ou JSON.
+- `bodyParam(string $name): mixed` Retourne la valeur d'une donnée du corps de la requète d'un formulaire ou JSON.
+- `attachements(): array` Retourne un tableau des données des fichiers envoyés. Indexé par le nom du champ.
+- `attachement(string $name): ?array` Retourne les données d'un fichier envoyé.
 
 ### Client
 
-- `userAgent(): string` Returns the user agent.
-- `ip(): string` Returns the IP Address.
+- `userAgent(): ?string` Retourne le user agent.
+- `ip(): string` Retourne l'adresse IP.
 
 ## Response
 
-`Bredala\Http\Response` helps to send HTTP response.
+`Bredala\Http\Response` Créer une réponse HTTP.
 
-- `reset(): mixed` Reset the response.
+### Construction
+
+- `create(): static` Crée une réponse avec les valeurs par défaut.
+- `createFromServer(): static` Crée une réponse alignée sur la requète courante : version du protocole, cookies sécurisés en HTTPS et réglages CORS déduits des entêtes `Origin` et `Access-Control-Request-*`.
+- `reset(): static` Réinitialise la réponse. La factory de flux et les réglages (cookies, CORS, buffer) sont conservés.
+
+### Configuration
+
+- `setStreamFactory(StreamFactoryInterface $factory): static` Définit la factory PSR-17 utilisée pour construire le corps.
+- `getStreamFactory(): StreamFactoryInterface` Retourne la factory, détectée automatiquement si aucune n'a été définie.
+- `setBuffer(int $buffer): static` Définit la taille du tampon utilisé à l'envoi du corps.
+- `setCookieDomain(string $domain = ''): static`
+- `setCookiePath(string $path = '/'): static`
+- `setCookieSecure(bool $secure = true): static`
+- `setCookieHttponly(bool $httponly = true): static`
+- `setCookieSamesite(string $samesite = ''): static`
+- `setCorsOrigin(string $origin = '*'): static`
+- `setCorsMethods(string $methods = 'GET,POST,PUT,PATCH,DELETE,OPTIONS'): static`
+- `setCorsHeaders(string $headers = '*'): static`
 
 ### HTTP status
 
-- `getProtocolVersion(): string` Returns HTTP protocole version.
-- `setStatusCode(int $code, ?string $reason = null): static` Sets HTTP status. If reason is null, a default reason corresponding to the HTTP status code is set.
+- `getProtocolVersion(): string` Retourne la version du protocole HTTP.
+- `setProtocolVersion(string $version): static` Définit la version du protocole HTTP.
+- `getStatusCode(): int` Retourne le statut HTTP de la réponse.
+- `setStatusCode(int $code, ?string $reason = null): static` Définit le statut HTTP de la réponse. Si la raison est nulle, une valeur par défaut correspondant au code HTTP sera utilisée.
+
+Les codes HTTP sont disponibles en constantes sur la réponse, et les libellés associés dans `Response::$statusReasons` (les deux viennent de `Bredala\Http\HttpStatusTrait`) :
+
+```php
+$res->setStatusCode(Response::HTTP_NOT_FOUND); // 404 Not Found
+```
 
 ### HTTP headers
 
-- `getHeaders(): array` Returns HTTP headers
-- `setHeader(string $name, string $value): static` Sets HTTP header.
-- `addHeader(string $name, string $value): static` Adds HTTP header. Userfull for headers with multiple values.
-- `removeHeader(string $name): static` Removes HTTP header
-- `setContentType(string $mime, string $charset = "UTF-8"): static` Sets content-type. File extension can be used for most of them.
+- `getHeaders(): array` Retourne toutes les entêtes.
+- `getHeader(string $header): array` Retourne les valeurs d'une entête.
+- `hasHeader(string $header): bool` Retourne si une entête est définie.
+- `addHeader(string $name, string $value, bool $replace = false): static` Ajoute une entête HTTP. Avec `$replace`, remplace les valeurs existantes au lieu de s'y ajouter.
+- `removeHeader(string $name): static` Supprime une entête HTTP.
+- `setContentType(string $mime, string $charset = "UTF-8"): static` Définit le type.
     ````php
-    $res->setContentType('jpg');
-    $res->setContentType('image/jpeg');
+    $res->setContentType('jpg'); // shortcut
+    $res->setContentType('image/jpeg'); // verbose
     ````
-- `addCookie(string $name, $value, int $expire = 0, $settings = []): static` Adds a cookie.
-- `removeCookie(string $name): static` Removes cookie.
-- `redirect(string $url = "/", bool $temporary = true): static` HTTP redirection.
-- `cache(int $age = 86400): static` Sets HTTP cache.
-- `noCache(): static` Forces HTTP no-cache.
-- `cors(?string $origin = null, ?string $method = null): static` Enables CORS.
+- `addCookie(string $name, $value, int $expire = 0, $settings = []): static` Ajoute un cookie. `$settings` surcharge ponctuellement les réglages globaux (`domain`, `path`, `secure`, `httponly`, `samesite`).
+- `removeCookie(string $name, $settings = []): static` Supprime un cookie. Le navigateur n'identifiant un cookie que par son nom, son domaine et son chemin, `$settings` doit reprendre ceux passés à `addCookie()`.
+- `redirect(string $url = "/", bool $temporary = true): static` Redirection HTTP (302 par défaut, 301 si `$temporary` est faux). Réinitialise la réponse au passage : seuls les cookies déjà ajoutés sont conservés.
+- `cache(int $age = 86400): static` Raccourci pour configurer le cache HTTP.
+- `noCache(): static` Désactive le cache HTTP.
+- `cors(?string $origin = null, ?string $methods = null, ?string $headers = null): static` Émet les entêtes CORS. Chaque argument nul retombe sur le réglage correspondant.
 
 ### Http body
 
-`getBody(): Bredala\Http\Stream` Returns body.
-`setBody(Bredala\Http\Stream|string $body = ""): static` Sets body.
+- `getBody(): StreamInterface` Retourne le corps de la réponse.
+- `setBody(StreamInterface|resource|string|Stringable|null $body = ""): static` Ajoute un contenu à la réponse. Un `StreamInterface` est utilisé tel quel ; tout autre type est refusé par une `InvalidArgumentException`.
+- `setBodyFile(string $filename, string $mode = 'r'): static` Ajoute un fichier comme contenu, en flux, sans le charger en mémoire.
+- `setText(string $data = ''): static` Convertit une chaîne en text/plain.
+- `setJson(mixed $data = null, int $flags = 0): static` Convertit une donnée en application/json. Encode avec `JSON_THROW_ON_ERROR` : une donnée non sérialisable lève une `JsonException`, pas une `ResponseException`.
+- `setJsonException(ResponseException $ex): static` Convertit une `ResponseException` en application/json et applique son statut à la réponse.
 
 ### Rendering
 
-`emitHeaders()` Sends headers.
-`emitBody(int $bufferLength = 0)` Sends Content.
-`emit(int $bufferLength = 0)` Sends headers & body.
+- `emitHeaders(): void` Envoi les entêtes au navigateur.
+- `emitBody(?int $bufferLength = null): void` Envoi le contenu au navigateur.
+- `emit(?int $bufferLength = null): void` Envoi entêtes et contenu au navigateur.
 
 ## Session
 
-`Bredala\Http\Session` helps to work with HTTP response.
+`Bredala\Http\Session` Couche d'abstraction pour manipuler les sessions.
 
-- `__construct(\SessionHandlerInterface $handler = NULL)` The constructors can use an optionnal session handler.
-- `start(): static` Start the session.
-- `close(): static` Writes and closes current session.
-- `destroy(): static` Destroys session.
-- `reset(): static` Removes all sessions vars.
-- `all()` Returns all session data.
-- `has(string $name): bool` Returns all session data.
-- `get(string $name, $default = null): mixed` Returns session data by name.
-- `set(string $name, mixed $value): static` Sets session data by name.
+- `__construct(?\SessionHandlerInterface $handler = null)` Le constructeur accepte un gestionnaire de session optionnel (memcache, db, etc).
+- `start(?string $id = null): static` Démarre une session, éventuellement sur un identifiant donné. À appeler à chaque requète.
+- `id(): ?string` Retourne l'identifiant de la session courante.
+- `close(): static` Ecrit et ferme la session.
+- `destroy(): static` Détruit une session.
+- `reset(): static` Supprime toutes les variables sessions.
+- `all()` Retourne toutes les données.
+- `has(string $name): bool` Retourne si une donnée existe en session.
+- `get(string $name, mixed $default = null): mixed` Récupère la valeur d'une session.
+- `set(string $name, mixed $value): static` Ajoute une donnée à la session.
+- `delete(string $name): static` Supprime une donnée de la session.
 
 ### Flash data
 
-Session data that will only be available for the next request, and is then automatically cleared. 
+Une donnée flash existe jusqu'a la prochaine requète (a moins de la re-marquer en flash).
 
-- `setFlash(string $name, $value): static` 
+- `setFlash(string $name, mixed $value): static`
 - `markFlash(string $name): static`
-- `unmarkFlash(string $name): static`
+- `unmarkFlash(string $name)`
 
 ### Temp data
 
-Session data with a specific expiration time. After the value expires, or the session expires or is deleted, the value is automatically removed.
+Une donnée temporaire existe une certaine durée.
 
-- `setTemp($name, $value, $time = 300)`
+- `setTemp(string $name, mixed $value, int $time = 300)`
 - `markTemp(string $name, int $time = 300)`
 - `unmarkTemp(string $name)`
+
+## ResponseException
+
+`Bredala\Http\ResponseException` Utilisée pour gérer globalement les erreurs des réponses HTTP.
+
+Hérite de `Exception` et implémente `JsonSerializable`. Une seule exception couvre tous les statuts : le code HTTP est passé au constructeur et se relit via `getCode()`.
+
+```php
+public function __construct(int $status, string $message = 'default', ?Throwable $previous = null)
+```
+
+```php
+throw new ResponseException(Response::HTTP_NOT_FOUND, 'Utilisateur introuvable');
+```
+
+### Données additionnelles
+
+- `setErrors(array $errors): static` Configure les erreurs.
+- `addError(string $key, mixed $value): static` Ajoute une erreur.
+- `getErrors(): array` Retourne les erreurs.
+- `setExtra(array $extra): static` Configure des données additionnelles.
+- `addExtra(string $key, mixed $value): static` Ajoute une donnée additionnelle.
+- `getExtra(): array` Retourne les données additionnelles.
+- `jsonSerialize(): mixed` Retourne la représentation JSON de l'exception.
+
+La sérialisation produit toujours les quatre mêmes clés :
+
+```json
+{
+    "status": 422,
+    "error": "Données invalides",
+    "errors": {"email": "Format invalide"},
+    "extra": []
+}
+```
+
+`errors` et `extra` sont toujours sérialisés en tableau `[]` lorsqu'ils sont vides, jamais en objet `{}`. Ils deviennent un objet JSON dès qu'une clé y est ajoutée.
+
+### Statuts courants
+
+Les constantes de `Response` évitent d'écrire les codes à la main.
+
+| Constante                          | Code | Usage                                                        |
+| ---------------------------------- | ---- | ------------------------------------------------------------ |
+| `Response::HTTP_BAD_REQUEST`       | 400  | Erreur provenant de l'utilisateur, erreur de validation.      |
+| `Response::HTTP_UNAUTHORIZED`      | 401  | Informations d'authentification non valides.                  |
+| `Response::HTTP_FORBIDDEN`         | 403  | Accès interdit.                                               |
+| `Response::HTTP_NOT_FOUND`         | 404  | Ressource introuvable.                                        |
+| `Response::HTTP_NOT_ACCEPTABLE`    | 406  | Format de réponse non négociable.                             |
+| `Response::HTTP_GONE`              | 410  | Ressource expirée.                                            |
+| `Response::HTTP_UNPROCESSABLE_ENTITY` | 422 | Entité bien formée mais sémantiquement invalide.           |
+| `Response::HTTP_LOCKED`            | 423  | Ressource verrouillée.                                        |
+| `Response::HTTP_INTERNAL_SERVER_ERROR` | 500 | Erreur d'exécution, telle une panne.                      |
+
+### Utilisation
+
+Lever l'exception depuis la logique métier, la rattraper une fois à la frontière :
+
+```php
+use Bredala\Http\Request;
+use Bredala\Http\Response;
+use Bredala\Http\ResponseException;
+
+$req = Request::createFromServer();
+$res = Response::createFromServer();
+
+try {
+    $user = $repository->find($req->queryParam('id'))
+        ?? throw new ResponseException(Response::HTTP_NOT_FOUND, 'Utilisateur introuvable');
+
+    $res->setJson($user);
+} catch (ResponseException $ex) {
+    $res->setJsonException($ex);
+}
+
+$res->emit();
+```

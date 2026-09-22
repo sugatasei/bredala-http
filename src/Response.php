@@ -2,87 +2,38 @@
 
 namespace Bredala\Http;
 
+use LogicException;
+use Psr\Http\Message\StreamFactoryInterface;
+use Psr\Http\Message\StreamInterface;
+
 class Response
 {
-    const HTTP_CONTINUE = 100;
-    const HTTP_SWITCHING_PROTOCOLS = 101;
-    const HTTP_PROCESSING = 102;                                      // RFC2518
-    const HTTP_EARLY_HINTS = 103;                                     // RFC8297
-    const HTTP_OK = 200;
-    const HTTP_CREATED = 201;
-    const HTTP_ACCEPTED = 202;
-    const HTTP_NON_AUTHORITATIVE_INFORMATION = 203;
-    const HTTP_NO_CONTENT = 204;
-    const HTTP_RESET_CONTENT = 205;
-    const HTTP_PARTIAL_CONTENT = 206;
-    const HTTP_MULTI_STATUS = 207;                                    // RFC4918
-    const HTTP_ALREADY_REPORTED = 208;                                // RFC5842
-    const HTTP_IM_USED = 226;                                         // RFC3229
-    const HTTP_MULTIPLE_CHOICES = 300;
-    const HTTP_MOVED_PERMANENTLY = 301;
-    const HTTP_FOUND = 302;
-    const HTTP_SEE_OTHER = 303;
-    const HTTP_NOT_MODIFIED = 304;
-    const HTTP_USE_PROXY = 305;
-    const HTTP_RESERVED = 306;
-    const HTTP_TEMPORARY_REDIRECT = 307;
-    const HTTP_PERMANENTLY_REDIRECT = 308;                            // RFC7238
-    const HTTP_BAD_REQUEST = 400;
-    const HTTP_UNAUTHORIZED = 401;
-    const HTTP_PAYMENT_REQUIRED = 402;
-    const HTTP_FORBIDDEN = 403;
-    const HTTP_NOT_FOUND = 404;
-    const HTTP_METHOD_NOT_ALLOWED = 405;
-    const HTTP_NOT_ACCEPTABLE = 406;
-    const HTTP_PROXY_AUTHENTICATION_REQUIRED = 407;
-    const HTTP_REQUEST_TIMEOUT = 408;
-    const HTTP_CONFLICT = 409;
-    const HTTP_GONE = 410;
-    const HTTP_LENGTH_REQUIRED = 411;
-    const HTTP_PRECONDITION_FAILED = 412;
-    const HTTP_REQUEST_ENTITY_TOO_LARGE = 413;
-    const HTTP_REQUEST_URI_TOO_LONG = 414;
-    const HTTP_UNSUPPORTED_MEDIA_TYPE = 415;
-    const HTTP_REQUESTED_RANGE_NOT_SATISFIABLE = 416;
-    const HTTP_EXPECTATION_FAILED = 417;
-    const HTTP_I_AM_A_TEAPOT = 418;                                   // RFC2324
-    const HTTP_MISDIRECTED_REQUEST = 421;                             // RFC7540
-    const HTTP_UNPROCESSABLE_ENTITY = 422;                            // RFC4918
-    const HTTP_LOCKED = 423;                                          // RFC4918
-    const HTTP_FAILED_DEPENDENCY = 424;                               // RFC4918
-    const HTTP_TOO_EARLY = 425;                                       // RFC-ietf-httpbis-replay-04
-    const HTTP_UPGRADE_REQUIRED = 426;                                // RFC2817
-    const HTTP_PRECONDITION_REQUIRED = 428;                           // RFC6585
-    const HTTP_TOO_MANY_REQUESTS = 429;                               // RFC6585
-    const HTTP_REQUEST_HEADER_FIELDS_TOO_LARGE = 431;                 // RFC6585
-    const HTTP_UNAVAILABLE_FOR_LEGAL_REASONS = 451;
-    const HTTP_INTERNAL_SERVER_ERROR = 500;
-    const HTTP_NOT_IMPLEMENTED = 501;
-    const HTTP_BAD_GATEWAY = 502;
-    const HTTP_SERVICE_UNAVAILABLE = 503;
-    const HTTP_GATEWAY_TIMEOUT = 504;
-    const HTTP_VERSION_NOT_SUPPORTED = 505;
-    const HTTP_VARIANT_ALSO_NEGOTIATES_EXPERIMENTAL = 506;            // RFC2295
-    const HTTP_INSUFFICIENT_STORAGE = 507;                            // RFC4918
-    const HTTP_LOOP_DETECTED = 508;                                   // RFC5842
-    const HTTP_NOT_EXTENDED = 510;                                    // RFC2774
-    const HTTP_NETWORK_AUTHENTICATION_REQUIRED = 511;                 // RFC6585
-
     use HttpStatusTrait;
     use MimesTypesTrait;
 
     protected array $settings = [];
 
-    private string $version = '';
+    private string $version = '1.1';
     private int $statusCode = 200;
     private string $statusReason = 'OK';
     private array $headers = [];
-    private ?Stream $body = null;
+    private ?StreamInterface $body = null;
 
+    /**
+     * Known PSR-17 implementations, tried in order when none is injected
+     */
+    private const STREAM_FACTORIES = [
+        'Nyholm\\Psr7\\Factory\\Psr17Factory',
+        'GuzzleHttp\\Psr7\\HttpFactory',
+        'Laminas\\Diactoros\\StreamFactory',
+        'HttpSoft\\Message\\StreamFactory',
+        'Slim\\Psr7\\Factory\\StreamFactory',
+    ];
+
+    private ?StreamFactoryInterface $streamFactory = null;
     private int $buffer = 0;
 
     private array $cookieSettings = [
-        'prefix' => '',
         'domain' => '',
         'path' => '/',
         'secure' => true,
@@ -98,7 +49,6 @@ class Response
 
 
     /**
-     * @param array $settings
      * @return static
      */
     public static function create(): static
@@ -112,10 +62,6 @@ class Response
             ->setProtocolVersion(self::findProtocolVersion($_SERVER))
             ->setCookieSecure(self::isSecure($_SERVER))
             ->setCorsOrigin();
-
-        if (isset($_SERVER["SERVER_PROTOCOL"])) {
-            $res->setProtocolVersion($_SERVER["SERVER_PROTOCOL"]);
-        }
 
         if (isset($_SERVER["HTTP_ORIGIN"])) {
             $res->setCorsOrigin($_SERVER["HTTP_ORIGIN"]);
@@ -140,22 +86,59 @@ class Response
 
     private static function findProtocolVersion(array $server): string
     {
-        return $server["SERVER_PROTOCOL"] ?? "1.0";
+        return $server["SERVER_PROTOCOL"] ?? "1.1";
     }
 
     // -------------------------------------------------------------------------
     // Configuration
     // -------------------------------------------------------------------------
 
-    public function setBuffer(int $buffer): static
+    /**
+     * Sets the PSR-17 stream factory used to build bodies
+     *
+     * @param StreamFactoryInterface $factory
+     * @return static
+     */
+    public function setStreamFactory(StreamFactoryInterface $factory): static
     {
-        $this->buffer = $buffer;
+        $this->streamFactory = $factory;
         return $this;
     }
 
-    public function setCookiePrefix(string $prefix = ''): static
+    /**
+     * Returns the stream factory
+     *
+     * Falls back to the first known PSR-17 implementation installed.
+     *
+     * @return StreamFactoryInterface
+     * @throws LogicException when no implementation is available
+     */
+    public function getStreamFactory(): StreamFactoryInterface
     {
-        $this->cookieSettings['prefix'] = $prefix;
+        if ($this->streamFactory !== null) {
+            return $this->streamFactory;
+        }
+
+        foreach (self::STREAM_FACTORIES as $class) {
+            if (!class_exists($class)) {
+                continue;
+            }
+
+            $factory = new $class();
+            if ($factory instanceof StreamFactoryInterface) {
+                return $this->streamFactory = $factory;
+            }
+        }
+
+        throw new LogicException(
+            'No PSR-17 stream factory found. Install one (nyholm/psr7, '
+            . 'guzzlehttp/psr7, laminas/laminas-diactoros) or call setStreamFactory().'
+        );
+    }
+
+    public function setBuffer(int $buffer): static
+    {
+        $this->buffer = $buffer;
         return $this;
     }
 
@@ -212,6 +195,9 @@ class Response
     // -------------------------------------------------------------------------
 
     /**
+     * Resets headers and body.
+     * Configuration (stream factory, buffer, cookie/cors settings) is kept.
+     *
      * @return static
      */
     public function reset(): static
@@ -287,25 +273,43 @@ class Response
      *
      * @return array
      */
-    public function getHeaders(?string $name = null): array
+    public function getHeaders(): array
     {
-        if ($name) {
-            $name = self::normalizeHeaderName($name);
-            return $this->headers[$name] ?? [];
-        }
         return $this->headers;
     }
 
     /**
-     * Adds HTTP header
+     * Returns values for a given header
      *
-     * @param string $name
-     * @param string $value
-     * @return static
+     * @param string $header
+     * @return string[]
      */
-    public function addHeader(string $name, string $value): static
+    public function getHeader(string $header): array
+    {
+        return $this->headers[self::normalizeHeaderName($header)] ?? [];
+    }
+
+    /**
+     * Checks if a header is set
+     *
+     * @param string $header
+     * @return bool
+     */
+    public function hasHeader(string $header): bool
+    {
+        return $this->getHeader($header) !== [];
+    }
+
+    /**
+     * Adds HTTP header
+     */
+    public function addHeader(string $name, string $value, bool $replace = false): static
     {
         $name = self::normalizeHeaderName($name);
+
+        if ($replace) {
+            $this->removeHeader($name);
+        }
 
         if (!isset($this->headers[$name])) {
             $this->headers[$name] = [];
@@ -341,15 +345,9 @@ class Response
      */
     public function setContentType(string $mime, string $charset = "UTF-8"): static
     {
-        $mime = self::$mimesTypes[$mime][0] ?? $mime;
-
-        if ($charset) {
-            $this->addHeader("content-type", "{$mime}; charset={$charset}");
-        } else {
-            $this->addHeader("content-type", "{$mime}");
-        }
-
-        return $this;
+        $mime  = self::$mimesTypes[$mime][0] ?? $mime;
+        $mime = $charset ? "{$mime}; charset={$charset}" : $mime;
+        return $this->addHeader("Content-Type", $mime, true);
     }
 
     /**
@@ -358,6 +356,7 @@ class Response
      * @param string $name
      * @param mixed $value
      * @param integer $expire
+     * @param array $settings
      * @return $this
      */
     public function addCookie(string $name, $value, int $expire = 0, $settings = []): static
@@ -397,12 +396,16 @@ class Response
     /**
      * Removes a cookie
      *
+     * A cookie is only matched by the browser on name, domain and path, so
+     * $settings must repeat whatever addCookie() was given.
+     *
      * @param string $name
+     * @param array $settings
      * @return $this
      */
-    public function removeCookie(string $name): static
+    public function removeCookie(string $name, $settings = []): static
     {
-        return $this->addCookie($name, "", strtotime("-1 day"));
+        return $this->addCookie($name, "", strtotime("-1 day"), $settings);
     }
 
     /**
@@ -419,7 +422,7 @@ class Response
 
         $this->reset();
         $this->setStatusCode($temporary ? 302 : 301);
-        $this->addHeader("location", filter_var($url, FILTER_SANITIZE_URL));
+        $this->addHeader("Location", filter_var($url, FILTER_SANITIZE_URL));
         foreach ($cookies as $cookie) {
             $this->addHeader('Set-Cookie', $cookie);
         }
@@ -435,9 +438,9 @@ class Response
      */
     public function cache(int $age = 86400): static
     {
-        $this->addHeader("pragma", "public");
-        $this->addHeader("cache-control", "max-age=" . $age);
-        $this->addHeader("expires", self::gmdate(time() + $age));
+        $this->addHeader("Pragma", "public");
+        $this->addHeader("Cache-Control", "max-age=" . $age);
+        $this->addHeader("Expires", self::gmdate(time() + $age));
 
         return $this;
     }
@@ -449,11 +452,11 @@ class Response
      */
     public function noCache(): static
     {
-        $this->addHeader("expires", "Mon, 26 Jul 1990 05:00:00 GMT");
-        $this->addHeader("last-modified", "" . gmdate("D, d M Y H:i:s") . " GMT");
-        $this->addHeader("cache-control", "no-store, no-cache, must-revalidate");
-        $this->addHeader("cache-control", "post-check=0, pre-check=0", false);
-        $this->addHeader("pragma", "no-cache");
+        $this->addHeader("Expires", "Mon, 26 Jul 1990 05:00:00 GMT");
+        $this->addHeader("Last-Modified", "" . gmdate("D, d M Y H:i:s") . " GMT");
+        $this->addHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+        $this->addHeader("Cache-Control", "post-check=0, pre-check=0");
+        $this->addHeader("Pragma", "no-cache");
 
         return $this;
     }
@@ -462,7 +465,7 @@ class Response
      * Enables CORS
      *
      * @param string|null $origin
-     * @param string|null $method
+     * @param string|null $methods
      * @return $this
      */
     public function cors(?string $origin = null, ?string $methods = null, ?string $headers = null): static
@@ -471,11 +474,11 @@ class Response
         $methods = $methods ?? $this->corsSettings['methods'];
         $headers = $headers ?? $this->corsSettings['headers'];
 
-        $this->addHeader("access-control-allow-origin", $origin);
-        $this->addHeader("access-control-allow-credentials", "true");
-        $this->addHeader("access-control-max-age", "86400");
-        $this->addHeader("access-control-allow-methods", $methods);
-        $this->addHeader("access-control-allow-headers", $headers);
+        $this->addHeader("Access-Control-Allow-Origin", $origin);
+        $this->addHeader("Access-Control-Allow-Credentials", "true");
+        $this->addHeader("Access-Control-Max-Age", "86400");
+        $this->addHeader("Access-Control-Allow-Methods", $methods);
+        $this->addHeader("Access-Control-Allow-Headers", $headers);
 
         return $this;
     }
@@ -487,12 +490,12 @@ class Response
     /**
      * Returns body
      *
-     * @return Stream
+     * @return StreamInterface
      */
-    public function getBody(): Stream
+    public function getBody(): StreamInterface
     {
         if ($this->body === null) {
-            $this->body = new Stream("");
+            $this->body = $this->getStreamFactory()->createStream('');
         }
 
         return $this->body;
@@ -501,17 +504,36 @@ class Response
     /**
      * Sets body
      *
-     * @param mixed $body
-     * @return object
+     * @param StreamInterface|resource|string|null $body
+     * @return static
      */
     public function setBody($body = ""): static
     {
-        if ($body instanceof Stream) {
+        if ($body instanceof StreamInterface) {
             $this->body = $body;
+        } elseif (is_resource($body)) {
+            $this->body = $this->getStreamFactory()->createStreamFromResource($body);
+        } elseif ($body === null || is_scalar($body) || $body instanceof \Stringable) {
+            $this->body = $this->getStreamFactory()->createStream((string) $body);
         } else {
-            $this->body = new Stream($body);
+            throw new \InvalidArgumentException(
+                'Body must be a StreamInterface, resource, string or Stringable.'
+            );
         }
 
+        return $this;
+    }
+
+    /**
+     * Sets body from a file, streamed without loading it in memory
+     *
+     * @param string $filename
+     * @param string $mode
+     * @return static
+     */
+    public function setBodyFile(string $filename, string $mode = 'r'): static
+    {
+        $this->body = $this->getStreamFactory()->createStreamFromFile($filename, $mode);
         return $this;
     }
 
@@ -530,11 +552,15 @@ class Response
      * Convert data into json output
      *
      * @param mixed $data
+     * @param int $flags
      * @return static
+     * @throws \JsonException
      */
-    public function setJson(mixed $data = null): static
+    public function setJson(mixed $data = null, int $flags = 0): static
     {
-        return $this->setContentType('json')->setBody(json_encode($data));
+        return $this
+            ->setContentType('json')
+            ->setBody(json_encode($data, $flags | JSON_THROW_ON_ERROR));
     }
 
     /**
@@ -557,7 +583,7 @@ class Response
      *
      * @return void
      */
-    public function emit(int $bufferLength = 0)
+    public function emit(?int $bufferLength = null): void
     {
         $this->emitHeaders();
         $this->emitBody($bufferLength);
@@ -565,10 +591,8 @@ class Response
 
     /**
      * Sends headers
-     *
-     * @return $this
      */
-    public function emitHeaders()
+    public function emitHeaders(): void
     {
         // Headers have already been sent by the developer
         if (headers_sent()) {
@@ -591,23 +615,21 @@ class Response
     /**
      * Sends Content
      *
-     * @return
+     * @return void
      */
-    public function emitBody(int $bufferLength = 0)
+    public function emitBody(?int $bufferLength = null): void
     {
-        if ($bufferLength === null) {
-            $bufferLength = $this->buffer;
-        }
-
-        if (!$bufferLength) {
-            echo $this->getBody();
-            return;
-        }
+        $bufferLength = $bufferLength ?? $this->buffer;
 
         $body = $this->getBody();
 
         if ($body->isSeekable()) {
             $body->rewind();
+        }
+
+        if ($bufferLength <= 0) {
+            echo $body->getContents();
+            return;
         }
 
         while (!$body->eof()) {
