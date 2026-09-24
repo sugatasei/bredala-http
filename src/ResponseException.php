@@ -8,6 +8,8 @@ use Throwable;
 
 class ResponseException extends Exception implements JsonSerializable
 {
+    use HttpStatusTrait;
+
     private array $errors = [];
     private array $extra = [];
 
