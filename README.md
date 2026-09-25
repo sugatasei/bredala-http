@@ -169,9 +169,10 @@ $res->setStatusCode(Response::HTTP_NOT_FOUND); // 404 Not Found
 
 `Bredala\Http\Session` Couche d'abstraction pour manipuler les sessions.
 
-- `__construct(?\SessionHandlerInterface $handler = null)` Le constructeur accepte un gestionnaire de session optionnel (memcache, db, etc).
+- `__construct(?\SessionHandlerInterface $handler = null, array $options = [])` Le constructeur accepte un gestionnaire de session optionnel (memcache, db, etc) et des options de cookie : `name` (`PHPSESSID`), `lifetime` (`7200`), `path` (`/`), `domain` (`''`), `secure` (`false`), `httponly` (`true`), `samesite` (`Lax`).
 - `start(?string $id = null): static` Démarre une session, éventuellement sur un identifiant donné. À appeler à chaque requète.
 - `id(): ?string` Retourne l'identifiant de la session courante.
+- `regenerate(bool $deleteOld = true): static` Régénère l'identifiant en conservant les données. À appeler après une connexion (protection contre la fixation de session).
 - `close(): static` Ecrit et ferme la session.
 - `destroy(): static` Détruit une session.
 - `reset(): static` Supprime toutes les variables sessions.

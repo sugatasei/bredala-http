@@ -59,12 +59,13 @@ Full IANA status code list: `Response::HTTP_*` constants, reason phrases in `Htt
 
 ## Session (`Bredala\Http\Session`)
 
-`__construct(?SessionHandlerInterface $handler = null)` — pass a handler for custom storage (Redis, DB, etc.), otherwise uses PHP's default.
+`__construct(?SessionHandlerInterface $handler = null, array $options = [])` — pass a handler for custom storage (Redis, DB, etc.), otherwise uses PHP's default. Options (defaults): `name` (`PHPSESSID`), `lifetime` (`7200`), `path` (`/`), `domain` (`''`), `secure` (`false`), `httponly` (`true`), `samesite` (`Lax`).
 
 | Intent                                                               | Method                                                                                 |
 | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
 | Start/resume session, expire flash & temp data                       | `start(?string $id = null): static`                                                    |
 | Current session ID (null if not started)                             | `id(): ?string`                                                                        |
+| New session ID keeping data (after login, prevents fixation)         | `regenerate(bool $deleteOld = true): static`                                           |
 | All session data                                                     | `all(): array`                                                                         |
 | Has / get / set a value                                              | `has(string $name)`, `get(string $name, $default = null)`, `set(string $name, $value)` |
 | Set a value that survives one more request                           | `setFlash(string $name, $value)`                                                       |

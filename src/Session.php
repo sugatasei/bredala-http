@@ -16,11 +16,37 @@ class Session
 
     /**
      * @param SessionHandlerInterface $handler
+     * @param array $options name, lifetime, path, domain, secure, httponly, samesite
      */
-    public function __construct(?SessionHandlerInterface $handler = null)
+    public function __construct(?SessionHandlerInterface $handler = null, array $options = [])
     {
         if ($handler) {
             session_set_save_handler($handler, TRUE);
+        }
+
+        $options += [
+            'name'     => 'PHPSESSID',
+            'lifetime' => 7200,
+            'path'     => '/',
+            'domain'   => '',
+            'secure'   => false,
+            'httponly' => true,
+            'samesite' => 'Lax',
+        ];
+
+        session_name($options['name']);
+        session_set_cookie_params([
+            'lifetime' => (int) $options['lifetime'],
+            'path'     => $options['path'],
+            'domain'   => $options['domain'],
+            'secure'   => (bool) $options['secure'],
+            'httponly' => (bool) $options['httponly'],
+            'samesite' => $options['samesite'],
+        ]);
+
+        // Cookie lifetime 0 = until browser closes: keep PHP default gc lifetime
+        if ($options['lifetime'] > 0) {
+            ini_set('session.gc_maxlifetime', (string) $options['lifetime']);
         }
     }
 
@@ -85,6 +111,22 @@ class Session
         }
 
         return null;
+    }
+
+    /**
+     * Regenerate session ID, keeping data
+     * Call after login / privilege change to prevent session fixation
+     *
+     * @param bool $deleteOld Delete the old session file
+     * @return static
+     */
+    public function regenerate(bool $deleteOld = true): static
+    {
+        if ($this->started) {
+            session_regenerate_id($deleteOld);
+        }
+
+        return $this;
     }
 
     /**
